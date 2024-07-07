@@ -1,3 +1,7 @@
+# DISCLAIMER
+I don't know if this works. Still have no EV, but I have the go eCharger :D
+I don't know how to track the changed value for /mode, when changing it via VRM.
+
 # dbus-goecharger
 Integrate go-eCharger into Victron Energies Venus OS with automatic mode and PvSurPlus
 
