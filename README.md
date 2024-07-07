@@ -1,5 +1,5 @@
 # dbus-goecharger
-Integrate go-eCharger into Victron Energies Venus OS
+Integrate go-eCharger into Victron Energies Venus OS with automatic mode and PvSurPlus
 
 ## Purpose
 With the scripts in this repo it should be easy possible to install, uninstall, restart a service that connects the go-eCharger to the VenusOS and GX devices from Victron.
