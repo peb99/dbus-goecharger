@@ -14,6 +14,10 @@ import sys
 import time
 import requests # for http GET
 import configparser # for config/ini file
+
+# for AutomaticMode
+import dbus
+
  
 # our own packages from victron
 sys.path.insert(1, os.path.join(os.path.dirname(__file__), '/opt/victronenergy/dbus-systemcalc-py/ext/velib_python'))
@@ -25,6 +29,14 @@ class DbusGoeChargerService:
     config = self._getConfig()
     deviceinstance = int(config['DEFAULT']['Deviceinstance'])
     hardwareVersion = int(config['DEFAULT']['HardwareVersion'])
+    pauseBetweenRequests = int(config['ONPREMISE']['PauseBetweenRequests']) # in ms
+    position = int(config['DEFAULT'].get('Position', '1'))
+
+    if pauseBetweenRequests <= 20:
+      raise ValueError("Pause between requests must be greater than 20")
+
+    if hardwareVersion < 4:
+      raise ValueError("Minimum hardware version required is 4.")
 
     self._dbusservice = VeDbusService("{}.http_{:02d}".format(servicename, deviceinstance))
     self._paths = paths
@@ -33,7 +45,7 @@ class DbusGoeChargerService:
     
     paths_wo_unit = [
       '/Status',  # value 'car' 1: charging station ready, no vehicle 2: vehicle loads 3: Waiting for vehicle 4: Charge finished, vehicle still connected
-      '/Mode'
+      '/Mode' 
     ]
     
     #get data from go-eCharger
@@ -50,12 +62,13 @@ class DbusGoeChargerService:
     self._dbusservice.add_path('/ProductName', productname)
     self._dbusservice.add_path('/CustomName', productname)    
     if data:
-       self._dbusservice.add_path('/FirmwareVersion', int(data['fwv'].replace('.', '')))
+       self._dbusservice.add_path('/FirmwareVersion', data['fwv'])
        self._dbusservice.add_path('/Serial', data['sse'])
     self._dbusservice.add_path('/HardwareVersion', hardwareVersion)
     self._dbusservice.add_path('/Connected', 1)
     self._dbusservice.add_path('/UpdateIndex', 0)
-    
+    self._dbusservice.add_path("/Position", position)
+
     # add paths without units
     for path in paths_wo_unit:
       self._dbusservice.add_path(path, None)
@@ -65,6 +78,8 @@ class DbusGoeChargerService:
       self._dbusservice.add_path(
         path, settings['initial'], gettextcallback=settings['textformat'], writeable=True, onchangecallback=self._handlechangedvalue)
 
+
+
     # last update
     self._lastUpdate = 0
     
@@ -72,7 +87,7 @@ class DbusGoeChargerService:
     self._chargingTime = 0.0
 
     # add _update function 'timer'
-    gobject.timeout_add(250, self._update) # pause 250ms before the next request
+    gobject.timeout_add(pauseBetweenRequests, self._update)
     
     # add _signOfLife 'timer' to get feedback in log every 5minutes
     gobject.timeout_add(self._getSignOfLifeInterval()*60*1000, self._signOfLife)
@@ -98,41 +113,47 @@ class DbusGoeChargerService:
     accessType = config['DEFAULT']['AccessType']
     
     if accessType == 'OnPremise': 
-        URL = "http://%s/status" % (config['ONPREMISE']['Host'])
+        URL = "http://%s/api/status?filter=fwv,sse,nrg,wh,alw,amp,ama,car" % (config['ONPREMISE']['Host'])
     else:
         raise ValueError("AccessType %s is not supported" % (config['DEFAULT']['AccessType']))
     
     return URL
   
-  def _getGoeChargerMqttPayloadUrl(self, parameter, value):
+  def _getGoeChargerAPIPayloadUrl(self, parameter, value):
     config = self._getConfig()
     accessType = config['DEFAULT']['AccessType']
     
     if accessType == 'OnPremise': 
-        URL = "http://%s/mqtt?payload=%s=%s" % (config['ONPREMISE']['Host'], parameter, value)
+        URL = "http://%s/api/set?%s=%s" % (config['ONPREMISE']['Host'], parameter, value)
+        logging.debug("Folgende URL wird getriggert: %s" % (URL))
     else:
         raise ValueError("AccessType %s is not supported" % (config['DEFAULT']['AccessType']))
     
     return URL
   
   def _setGoeChargerValue(self, parameter, value):
-    URL = self._getGoeChargerMqttPayloadUrl(parameter, str(value))
+    URL = self._getGoeChargerAPIPayloadUrl(parameter, str(value))
     request_data = requests.get(url = URL)
     
     # check for response
     if not request_data:
+      logging.info("No response from go-eCharger - %s" % (URL))
       raise ConnectionError("No response from go-eCharger - %s" % (URL))
+
     
     json_data = request_data.json()
-    
+
+    logging.debug("Folgender Wert kam zurueck: " % json_data[parameter])
+
     # check for Json
     if not json_data:
+        logging.info("Converting response to JSON failed")
         raise ValueError("Converting response to JSON failed")
     
-    if json_data[parameter] == str(value):
+    if json_data[parameter] == "true":
       return True
     else:
-      logging.warning("go-eCharger parameter %s not set to %s" % (parameter, str(value)))
+      logging.info("go-eCharger parameter %s not set to %s" % (parameter, str(value)))
       return False
     
  
@@ -156,7 +177,49 @@ class DbusGoeChargerService:
     
     return json_data
  
- 
+
+  def _setGoeChargerAutomaticModeValues(self):
+    config = self._getConfig()
+    accessType = config['DEFAULT']['AccessType']
+    logging.debug("AutomaticMode - Werte setzen:")
+    
+    if accessType == 'OnPremise': 
+        bus = dbus.SystemBus()
+        # pGrid ermitteln. Kumulierte Leistung des Grid auf allen Phasen
+        L1gPower = float((bus.get_object('com.victronenergy.system', '/Ac/Grid/L1/Power')).GetValue())
+        L2gPower = float((bus.get_object('com.victronenergy.system', '/Ac/Grid/L2/Power')).GetValue())
+        L3gPower = float((bus.get_object('com.victronenergy.system', '/Ac/Grid/L3/Power')).GetValue())
+        pGrid = L1gPower + L2gPower + L3gPower
+        logging.info("pGrid wurde ermittelt: %s" % (pGrid))
+
+        # pPv ermitteln. Kumulierte Leistung aller PV Anlagen auf allen Phasen
+        L1pPower = float((bus.get_object('com.victronenergy.system', '/Ac/PvOnGrid/L1/Power')).GetValue())
+        L2pPower = float((bus.get_object('com.victronenergy.system', '/Ac/PvOnGrid/L2/Power')).GetValue())
+        L3pPower = float((bus.get_object('com.victronenergy.system', '/Ac/PvOnGrid/L3/Power')).GetValue())
+        pPv = L1pPower + L2pPower + L3pPower
+        logging.info("pPv wurde ermittelt: %s" % (pPv))
+
+        # pAkku ermittelnt
+        pAkku = float((bus.get_object('com.victronenergy.system', '/Dc/Battery/Power')).GetValue())
+        logging.info("pAkku wurde ermittelt: %s" % (pAkku))
+
+        URL = 'http://%s/api/set?ids={"pGrid":%s,"pAkku":%s,"pPv":%s}' % (config['ONPREMISE']['Host'],pGrid,pAkku,pPv)
+        logging.info("Folgende URL wird getriggert: %s" % (URL))
+
+        requests.get(url = URL, timeout=15)
+
+        # http://192.168.100.4/api/set?ids={%22pGrid%22:-6027,%22pAkku%22:-186,%22pPv%22:7269}
+        # Werte checken:
+        # http://192.168.100.4/api/status?filter=ppv
+        # http://192.168.100.4/api/status?filter=pAkku
+        # http://192.168.100.4/api/status?filter=pGrid
+    else:
+        raise ValueError("AccessType %s is not supported" % (config['DEFAULT']['AccessType']))
+    return True
+
+
+
+
   def _signOfLife(self):
     logging.info("--- Start: sign of life ---")
     logging.info("Last _update() call: %s" % (self._lastUpdate))
@@ -168,21 +231,47 @@ class DbusGoeChargerService:
     try:
        #get data from go-eCharger
        data = self._getGoeChargerData()
+       logging.debug("Update Schleife.")
+       modestatus = self._dbusservice['/Mode']
+       logging.debug("Mode ist: %s" % (modestatus))
+       if modestatus == 1:
+         self._setGoeChargerAutomaticModeValues()
+
+
        
        if data is not None:
+
+          '''
+          data['nrg']
+          0 = U L1
+          1 = U L2
+          2 = U L3
+          3 = U N
+          4 = I L1
+          5 = I L2
+          6 = I L3
+          7 = P L1
+          8 = P L2
+          9 = P L3
+          10 = P N
+          11 = P Total
+          12 = PF L1
+          13 = PF L2
+          14 = PF L3
+          15 = PF N
+          '''
+
           #send data to DBus
-          self._dbusservice['/Ac/L1/Power'] = int(data['nrg'][7] * 0.1 * 1000)
-          self._dbusservice['/Ac/L2/Power'] = int(data['nrg'][8] * 0.1 * 1000)
-          self._dbusservice['/Ac/L3/Power'] = int(data['nrg'][9] * 0.1 * 1000)
-          self._dbusservice['/Ac/Power'] = int(data['nrg'][11] * 0.01 * 1000)
-          self._dbusservice['/Ac/Voltage'] = int(data['nrg'][0])
-          self._dbusservice['/Current'] = max(data['nrg'][4] * 0.1, data['nrg'][5] * 0.1, data['nrg'][6] * 0.1)
-          self._dbusservice['/Ac/Energy/Forward'] = int(float(data['eto']) / 10.0)
+          self._dbusservice['/Ac/L1/Power'] = int(data['nrg'][7])
+          self._dbusservice['/Ac/L2/Power'] = int(data['nrg'][8])
+          self._dbusservice['/Ac/L3/Power'] = int(data['nrg'][9])
+          self._dbusservice['/Ac/Power'] = int(data['nrg'][11])
+          self._dbusservice['/Current'] = max(data['nrg'][4], data['nrg'][5], data['nrg'][6])
+          self._dbusservice['/Ac/Energy/Forward'] = round(data['wh'] / 1000, 2)
           
           self._dbusservice['/StartStop'] = int(data['alw'])
           self._dbusservice['/SetCurrent'] = int(data['amp'])
           self._dbusservice['/MaxCurrent'] = int(data['ama']) 
-          
           # update chargingTime, increment charge time only on active charging (2), reset when no car connected (1)
           timeDelta = time.time() - self._lastUpdate
           if int(data['car']) == 2 and self._lastUpdate > 0:  # vehicle loads
@@ -191,14 +280,8 @@ class DbusGoeChargerService:
             self._chargingTime = 0
           self._dbusservice['/ChargingTime'] = int(self._chargingTime)
 
-          self._dbusservice['/Mode'] = 0  # Manual, no control
-          
-          config = self._getConfig()
-          hardwareVersion = int(config['DEFAULT']['HardwareVersion'])
-          if hardwareVersion == 3:
-            self._dbusservice['/MCU/Temperature'] = int(data['tma'][0])
-          else:
-            self._dbusservice['/MCU/Temperature'] = int(data['tmp'])
+          self._dbusservice['/Mode'] = 1  # 0 = Manual, 1 = Automatic
+          # i dont know how to trace the change of /Mode via VRM...
 
           # value 'car' 1: charging station ready, no vehicle 2: vehicle loads 3: Waiting for vehicle 4: Charge finished, vehicle still connected
           status = 0
@@ -235,24 +318,34 @@ class DbusGoeChargerService:
     return True
  
   def _handlechangedvalue(self, path, value):
-    logging.info("someone else updated %s to %s" % (path, value))
+    logging.error("someone else updated %s to %s" % (path, value))
+    MaxCurrent = self._dbusservice['/MaxCurrent']
     
     if path == '/SetCurrent':
+      if value > MaxCurrent:
+        logging.error("SetCurrent is higher than MaxCurrent. Limit reached. Set SetCurrent to MaxCurrent!")
+        return self._setGoeChargerValue('amp', MaxCurrent)
       return self._setGoeChargerValue('amp', value)
     elif path == '/StartStop':
       return self._setGoeChargerValue('alw', value)
     elif path == '/MaxCurrent':
-      return self._setGoeChargerValue('ama', value)
+      logging.error("It's not allowed to set MaxCurrent via Victron! set MaxCurrent in your Go eCharger!")
+      return False
+      #return self._setGoeChargerValue('ama', value)
     else:
-      logging.info("mapping for evcharger path %s does not exist" % (path))
+      logging.error("mapping for evcharger path %s does not exist" % (path))
       return False
 
 
 def main():
   #configure logging
+  config = configparser.ConfigParser()
+  config.read(f"{(os.path.dirname(os.path.realpath(__file__)))}/config.ini")
+  logging_level = config["DEFAULT"]["Logging"].upper()
+
   logging.basicConfig(      format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                             datefmt='%Y-%m-%d %H:%M:%S',
-                            level=logging.INFO,
+                            level=logging_level,
                             handlers=[
                                 logging.FileHandler("%s/current.log" % (os.path.dirname(os.path.realpath(__file__)))),
                                 logging.StreamHandler()
