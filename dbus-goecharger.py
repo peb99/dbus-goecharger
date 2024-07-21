@@ -36,7 +36,7 @@ class DbusGoeChargerService:
     if pauseBetweenRequests <= 20:
       raise ValueError("Pause between requests must be greater than 20")
 
-    if hardwareVersion < 4:
+    if hardwareVersion < 3:
       raise ValueError("Minimum hardware version required is 4.")
 
     self._dbusservice = VeDbusService("{}.http_{:02d}".format(servicename, deviceinstance))
