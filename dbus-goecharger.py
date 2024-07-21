@@ -133,12 +133,12 @@ class DbusGoeChargerService:
     return URL
   
   def _setGoeChargerValue(self, parameter, value):
-    logging.warning("Parameter hat folgenden Wert: %s" % (parameter))
-    logging.warning("value hat folgenden Wert: %s" % (value))
+    logging.error("Parameter hat folgenden Wert: %s" % (parameter))
+    logging.error("value hat folgenden Wert: %s" % (value))
     URL = self._getGoeChargerAPIPayloadUrl(parameter, str(value))
-    logging.warning("URL auf %s gesetzt" % (URL))
+    logging.error("URL auf %s gesetzt" % (URL))
     request_data = requests.get(url = URL)
-    logging.warning("Request_data hat Inhalt: %s" % (request_data))
+    logging.error("Request_data hat Inhalt: %s" % (request_data))
 
     # check for response
     if not request_data:
@@ -148,17 +148,17 @@ class DbusGoeChargerService:
     
     json_data = request_data.json()
 
-    logging.warning("json_data[parameter] hat folgenden Wert: %s" % json_data[parameter])
+    logging.error("json_data[parameter] hat folgenden Wert: %s" % json_data[parameter])
 
     # check for Json
     if not json_data:
-        logging.warning("Converting response to JSON failed")
+        logging.error("Converting response to JSON failed")
         raise ValueError("Converting response to JSON failed")
     
     if str(json_data[parameter]) == "true" or str(json_data[parameter]) == "True" or json_data[parameter] == str(value):
       return True
     else:
-      logging.warning("go-eCharger parameter %s not set to %s" % (parameter, str(value)))
+      logging.error("go-eCharger parameter %s not set to %s" % (parameter, str(value)))
       return False
 
  
@@ -239,15 +239,16 @@ class DbusGoeChargerService:
        data = self._getGoeChargerData()
        logging.debug("Update Schleife.")
        modestatus = self._dbusservice['/Mode']
-       logging.error("Mode ist: %s" % (modestatus))
+
+       logging.warning("Mode ist: %s" % (modestatus))
        if modestatus == 1:
-         logging.error("Mode-Schleife hat zugeschlagen.")
+         logging.warning("Mode-Schleife hat zugeschlagen.")
          self._setGoeChargerAutomaticModeValues()
          MaxCurrent = self._dbusservice['/MaxCurrent']
          SetCurrent = self._dbusservice['/SetCurrent']
+         
          if SetCurrent < MaxCurrent:
            self._setGoeChargerValue('amp', MaxCurrent)
-
 
 
 
@@ -331,7 +332,7 @@ class DbusGoeChargerService:
     return True
  
   def _handlechangedvalue(self, path, value):
-    logging.error("someone else updated %s to %s" % (path, value))
+    logging.warning("someone else updated %s to %s" % (path, value))
     MaxCurrent = self._dbusservice['/MaxCurrent']
     
     if path == '/SetCurrent':
@@ -362,15 +363,22 @@ class DbusGoeChargerService:
       #return self._setGoeChargerValue('ama', value)
     elif path == '/Mode':
       logging.info("/Mode value %s" % (value))
+      StartStop = self._dbusservice['/StartStop']
+      logging.error("StartStop ist: %s" % (StartStop))
       lmo = 0
+      frc = 1
       # Victron Mode 0 = manual | Go eCharger Loading Mode:"basic", parameter lmo = 3 
       # Victron Mode 1 = automatic | go eCharger Loading Mode: "eco", parameter lmo = 4
       # Victron Mode 2 = scheduled | go eCharger Loading Mode: "daily trip", parameter lmo = 5 - nicht implementiert
       if value == 0:
         lmo = 3
+        if (StartStop == 1):
+          frc = 2
         logging.info("lmo auf %s gesetzt" % (lmo))
       elif value == 1:
         lmo = 4
+        if (StartStop == 1):
+          frc = 0
         logging.info("lmo auf %s gesetzt" % (lmo))
       elif value == 2:
         lmo = 5
@@ -379,7 +387,10 @@ class DbusGoeChargerService:
         logging.info("lmo nicht gesetzt, ELSE Part")
         return False
       logging.info("jetzt wird setGoeChargerValue mit lmo = %s aufgerufen." % (lmo))
-      return self._setGoeChargerValue('lmo', lmo)
+      modeswitch = False
+      if (self._setGoeChargerValue('lmo', lmo) == True and self._setGoeChargerValue('frc', frc) == True):
+        modeswitch = True
+      return modeswitch
     else:
       logging.error("mapping for evcharger path %s does not exist" % (path))
       return False
