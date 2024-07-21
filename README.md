@@ -58,7 +58,7 @@ If you have (only) DC connected PV System you have to edit the lines 201 - 205. 
 
 
 ### Pictures
-
+![VenusOS device list](/pics/devicelist.png)
 
 ## Install & Configuration
 ### Get the code
