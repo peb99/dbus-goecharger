@@ -43,12 +43,12 @@ Based on good work from @0x7878 and @vikt0rm
 
 ## How it works
 ### My setup (only relevant for this script)
-- 3-Phase installation
+- Grid: 3-Phase installation
 - Venus OS on Raspberry PI 3b 4GB RAM - Firmware v3.34
-  - MK3-USB connected to Mulitplus II 48/5000
+  - MK3-USB connected to Mulitplus II 48/5000 on Phase 1
   - Connected via LAN to my home-lan
 - go-eCharger hardware version 4
-  - Make sure in your go-eCharger app that api v4 is activated
+  - Make sure in your go-eCharger app that _http api v2_ is activated
   - Connected via WiFi to my home-lan (same subnet as Raspberry)
 
 ### Details / Process
