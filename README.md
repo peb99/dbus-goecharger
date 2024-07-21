@@ -58,7 +58,11 @@ If you have (only) DC connected PV System you have to edit the lines 201 - 205. 
 
 
 ### Pictures
-![VenusOS device list](/pics/devicelist.png)
+![VenusOS device list](/pics/device-list.png)
+![VenusOS / device / go-eCharger](/pics/go-eCharger-overview.png)
+![VRM / controls](/pics/vrm-controls.png)
+![VRM / overview](/pics/vrm-overview.png)
+![VRM / details](/pics/vrm-details.png)
 
 ## Install & Configuration
 ### Get the code
