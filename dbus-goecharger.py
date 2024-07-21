@@ -3,6 +3,7 @@
 # import normal packages
 import platform 
 import logging
+import logging.handlers
 import sys
 import os
 import sys
@@ -133,12 +134,12 @@ class DbusGoeChargerService:
     return URL
   
   def _setGoeChargerValue(self, parameter, value):
-    logging.error("Parameter hat folgenden Wert: %s" % (parameter))
-    logging.error("value hat folgenden Wert: %s" % (value))
+    logging.info("Parameter hat folgenden Wert: %s" % (parameter))
+    logging.info("value hat folgenden Wert: %s" % (value))
     URL = self._getGoeChargerAPIPayloadUrl(parameter, str(value))
-    logging.error("URL auf %s gesetzt" % (URL))
+    logging.info("URL auf %s gesetzt" % (URL))
     request_data = requests.get(url = URL)
-    logging.error("Request_data hat Inhalt: %s" % (request_data))
+    logging.info("Request_data hat Inhalt: %s" % (request_data))
 
     # check for response
     if not request_data:
@@ -148,7 +149,7 @@ class DbusGoeChargerService:
     
     json_data = request_data.json()
 
-    logging.error("json_data[parameter] hat folgenden Wert: %s" % json_data[parameter])
+    logging.info("json_data[parameter] hat folgenden Wert: %s" % json_data[parameter])
 
     # check for Json
     if not json_data:
@@ -364,7 +365,7 @@ class DbusGoeChargerService:
     elif path == '/Mode':
       logging.info("/Mode value %s" % (value))
       StartStop = self._dbusservice['/StartStop']
-      logging.error("StartStop ist: %s" % (StartStop))
+      logging.info("StartStop ist: %s" % (StartStop))
       lmo = 0
       frc = 1
       # Victron Mode 0 = manual | Go eCharger Loading Mode:"basic", parameter lmo = 3 
@@ -402,12 +403,23 @@ def main():
   config.read(f"{(os.path.dirname(os.path.realpath(__file__)))}/config.ini")
   logging_level = config["DEFAULT"]["Logging"].upper()
 
+  log_rotate_handler = logging.handlers.RotatingFileHandler(
+    maxBytes=512000,
+    backupCount=2,
+    encoding=None,
+    delay=0,
+    filename="%s/current.log" % (os.path.dirname(os.path.realpath(__file__)))
+  )
+
+
   logging.basicConfig(      format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                             datefmt='%Y-%m-%d %H:%M:%S',
                             level=logging_level,
+                            
                             handlers=[
-                                logging.FileHandler("%s/current.log" % (os.path.dirname(os.path.realpath(__file__)))),
-                                logging.StreamHandler()
+                                #logging.FileHandler("%s/current.log" % (os.path.dirname(os.path.realpath(__file__)))), # removed due to hint from Philipp Trenz @ Community.victron.com and added log_rotate_handler
+                                logging.StreamHandler(),
+                                log_rotate_handler
                             ])
  
   try:
