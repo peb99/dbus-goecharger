@@ -44,8 +44,8 @@ class DbusGoeChargerService:
     logging.debug("%s /DeviceInstance = %d" % (servicename, deviceinstance))
     
     paths_wo_unit = [
-      '/Status',  # value 'car' 1: charging station ready, no vehicle 2: vehicle loads 3: Waiting for vehicle 4: Charge finished, vehicle still connected
-      '/Mode' 
+      '/Status'#,  # value 'car' 1: charging station ready, no vehicle 2: vehicle loads 3: Waiting for vehicle 4: Charge finished, vehicle still connected
+      #'/Mode' 
     ]
     
     #get data from go-eCharger
@@ -68,6 +68,7 @@ class DbusGoeChargerService:
     self._dbusservice.add_path('/Connected', 1)
     self._dbusservice.add_path('/UpdateIndex', 0)
     self._dbusservice.add_path("/Position", position)
+    #self._dbusservice.add_path("/Mode", 1)
 
     # add paths without units
     for path in paths_wo_unit:
@@ -125,16 +126,20 @@ class DbusGoeChargerService:
     
     if accessType == 'OnPremise': 
         URL = "http://%s/api/set?%s=%s" % (config['ONPREMISE']['Host'], parameter, value)
-        logging.debug("Folgende URL wird getriggert: %s" % (URL))
+        logging.info("Folgende URL wird getriggert: %s" % (URL))
     else:
         raise ValueError("AccessType %s is not supported" % (config['DEFAULT']['AccessType']))
     
     return URL
   
   def _setGoeChargerValue(self, parameter, value):
+    logging.warning("Parameter hat folgenden Wert: %s" % (parameter))
+    logging.warning("value hat folgenden Wert: %s" % (value))
     URL = self._getGoeChargerAPIPayloadUrl(parameter, str(value))
+    logging.warning("URL auf %s gesetzt" % (URL))
     request_data = requests.get(url = URL)
-    
+    logging.warning("Request_data hat Inhalt: %s" % (request_data))
+
     # check for response
     if not request_data:
       logging.info("No response from go-eCharger - %s" % (URL))
@@ -143,19 +148,19 @@ class DbusGoeChargerService:
     
     json_data = request_data.json()
 
-    logging.debug("Folgender Wert kam zurueck: " % json_data[parameter])
+    logging.warning("json_data[parameter] hat folgenden Wert: %s" % json_data[parameter])
 
     # check for Json
     if not json_data:
-        logging.info("Converting response to JSON failed")
+        logging.warning("Converting response to JSON failed")
         raise ValueError("Converting response to JSON failed")
     
-    if json_data[parameter] == "true":
+    if str(json_data[parameter]) == "true" or str(json_data[parameter]) == "True" or json_data[parameter] == str(value):
       return True
     else:
-      logging.info("go-eCharger parameter %s not set to %s" % (parameter, str(value)))
+      logging.warning("go-eCharger parameter %s not set to %s" % (parameter, str(value)))
       return False
-    
+
  
   def _getGoeChargerData(self):
     URL = self._getGoeChargerStatusUrl()
@@ -181,7 +186,7 @@ class DbusGoeChargerService:
   def _setGoeChargerAutomaticModeValues(self):
     config = self._getConfig()
     accessType = config['DEFAULT']['AccessType']
-    logging.debug("AutomaticMode - Werte setzen:")
+    logging.warning("AutomaticMode - Werte setzen:")
     
     if accessType == 'OnPremise': 
         bus = dbus.SystemBus()
@@ -190,21 +195,22 @@ class DbusGoeChargerService:
         L2gPower = float((bus.get_object('com.victronenergy.system', '/Ac/Grid/L2/Power')).GetValue())
         L3gPower = float((bus.get_object('com.victronenergy.system', '/Ac/Grid/L3/Power')).GetValue())
         pGrid = L1gPower + L2gPower + L3gPower
-        logging.info("pGrid wurde ermittelt: %s" % (pGrid))
+        logging.warning("pGrid wurde ermittelt: %s" % (pGrid))
 
         # pPv ermitteln. Kumulierte Leistung aller PV Anlagen auf allen Phasen
         L1pPower = float((bus.get_object('com.victronenergy.system', '/Ac/PvOnGrid/L1/Power')).GetValue())
         L2pPower = float((bus.get_object('com.victronenergy.system', '/Ac/PvOnGrid/L2/Power')).GetValue())
         L3pPower = float((bus.get_object('com.victronenergy.system', '/Ac/PvOnGrid/L3/Power')).GetValue())
-        pPv = L1pPower + L2pPower + L3pPower
-        logging.info("pPv wurde ermittelt: %s" % (pPv))
+        #DcPvPower = float((bus.get_object('com.victronenergy.system', '/Dc/Pv/Power')).GetValue())
+        pPv = L1pPower + L2pPower + L3pPower #+ DcPvPower
+        logging.warning("pPv wurde ermittelt: %s" % (pPv))
 
         # pAkku ermittelnt
-        pAkku = float((bus.get_object('com.victronenergy.system', '/Dc/Battery/Power')).GetValue())
-        logging.info("pAkku wurde ermittelt: %s" % (pAkku))
+        pAkku = float((bus.get_object('com.victronenergy.system', '/Dc/Battery/Power')).GetValue()) * -1
+        logging.warning("pAkku wurde ermittelt: %s" % (pAkku))
 
         URL = 'http://%s/api/set?ids={"pGrid":%s,"pAkku":%s,"pPv":%s}' % (config['ONPREMISE']['Host'],pGrid,pAkku,pPv)
-        logging.info("Folgende URL wird getriggert: %s" % (URL))
+        logging.warning("Folgende URL wird getriggert: %s" % (URL))
 
         requests.get(url = URL, timeout=15)
 
@@ -233,9 +239,16 @@ class DbusGoeChargerService:
        data = self._getGoeChargerData()
        logging.debug("Update Schleife.")
        modestatus = self._dbusservice['/Mode']
-       logging.debug("Mode ist: %s" % (modestatus))
+       logging.error("Mode ist: %s" % (modestatus))
        if modestatus == 1:
+         logging.error("Mode-Schleife hat zugeschlagen.")
          self._setGoeChargerAutomaticModeValues()
+         MaxCurrent = self._dbusservice['/MaxCurrent']
+         SetCurrent = self._dbusservice['/SetCurrent']
+         if SetCurrent < MaxCurrent:
+           self._setGoeChargerValue('amp', MaxCurrent)
+
+
 
 
        
@@ -269,7 +282,7 @@ class DbusGoeChargerService:
           self._dbusservice['/Current'] = max(data['nrg'][4], data['nrg'][5], data['nrg'][6])
           self._dbusservice['/Ac/Energy/Forward'] = round(data['wh'] / 1000, 2)
           
-          self._dbusservice['/StartStop'] = int(data['alw'])
+          #self._dbusservice['/StartStop'] = int(data['alw'])
           self._dbusservice['/SetCurrent'] = int(data['amp'])
           self._dbusservice['/MaxCurrent'] = int(data['ama']) 
           # update chargingTime, increment charge time only on active charging (2), reset when no car connected (1)
@@ -280,7 +293,7 @@ class DbusGoeChargerService:
             self._chargingTime = 0
           self._dbusservice['/ChargingTime'] = int(self._chargingTime)
 
-          self._dbusservice['/Mode'] = 1  # 0 = Manual, 1 = Automatic
+          #self._dbusservice['/Mode'] = 1  # 0 = Manual, 1 = Automatic
           # i dont know how to trace the change of /Mode via VRM...
 
           # value 'car' 1: charging station ready, no vehicle 2: vehicle loads 3: Waiting for vehicle 4: Charge finished, vehicle still connected
@@ -323,15 +336,50 @@ class DbusGoeChargerService:
     
     if path == '/SetCurrent':
       if value > MaxCurrent:
-        logging.error("SetCurrent is higher than MaxCurrent. Limit reached. Set SetCurrent to MaxCurrent!")
+        logging.warning("SetCurrent is higher than MaxCurrent. Limit reached. Set SetCurrent to MaxCurrent!")
         return self._setGoeChargerValue('amp', MaxCurrent)
       return self._setGoeChargerValue('amp', value)
     elif path == '/StartStop':
-      return self._setGoeChargerValue('alw', value)
+      # Wenn Automatisch (Modestatus = 1), dann im GoECharger auf 0 (Ueberschuss-Laden aktivieren) oder 1 (Laden deaktivieren) stellen
+      # wenn geplant (Modestatus = 2), dann im GoECharger auf x stellen - nicht implementiert
+      # wenn manuell (Modestatus = 0), dann im GoECharger auf 1 (Laden deaktivieren) und 2 (Laden aktivieren) stellen
+      modestatus = self._dbusservice['/Mode']
+      if modestatus == 0:
+        return self._setGoeChargerValue('frc', value + 1)
+
+      elif modestatus == 1:
+        # pruefen, wo StartStop steht
+        if value == 1:
+          return self._setGoeChargerValue('frc', 0)
+        if value == 0:
+          return self._setGoeChargerValue('frc', 1)
+      else:
+        return False
+
     elif path == '/MaxCurrent':
-      logging.error("It's not allowed to set MaxCurrent via Victron! set MaxCurrent in your Go eCharger!")
+      logging.warning("It's not allowed to set MaxCurrent via Victron! set MaxCurrent in your Go eCharger!")
       return False
       #return self._setGoeChargerValue('ama', value)
+    elif path == '/Mode':
+      logging.info("/Mode value %s" % (value))
+      lmo = 0
+      # Victron Mode 0 = manual | Go eCharger Loading Mode:"basic", parameter lmo = 3 
+      # Victron Mode 1 = automatic | go eCharger Loading Mode: "eco", parameter lmo = 4
+      # Victron Mode 2 = scheduled | go eCharger Loading Mode: "daily trip", parameter lmo = 5 - nicht implementiert
+      if value == 0:
+        lmo = 3
+        logging.info("lmo auf %s gesetzt" % (lmo))
+      elif value == 1:
+        lmo = 4
+        logging.info("lmo auf %s gesetzt" % (lmo))
+      elif value == 2:
+        lmo = 5
+        logging.info("lmo auf %s gesetzt" % (lmo))
+      else:
+        logging.info("lmo nicht gesetzt, ELSE Part")
+        return False
+      logging.info("jetzt wird setGoeChargerValue mit lmo = %s aufgerufen." % (lmo))
+      return self._setGoeChargerValue('lmo', lmo)
     else:
       logging.error("mapping for evcharger path %s does not exist" % (path))
       return False
@@ -382,7 +430,8 @@ def main():
           '/SetCurrent': {'initial': 0, 'textformat': _a},
           '/MaxCurrent': {'initial': 0, 'textformat': _a},
           '/MCU/Temperature': {'initial': 0, 'textformat': _degC},
-          '/StartStop': {'initial': 0, 'textformat': lambda p, v: (str(v))}
+          '/StartStop': {'initial': 0, 'textformat': lambda p, v: (str(v))},
+          '/Mode': {'initial': 0, 'textformat': lambda p, v: (str(v))}
         }
         )
      
