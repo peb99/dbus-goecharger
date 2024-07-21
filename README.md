@@ -20,6 +20,12 @@ If you want to support my work, you can support via paypal: https://www.paypal.c
 Integrate go-eCharger into Victron Energiy Venus OS with automatic mode and PvSurPlus
 Integrierte den go-eCharger (v4) in das Victron Energy Venus OS mit automatischem Lademodus mit Überschussladung.
 
+if you have Hardware Version v1, v2 or v3 please remove the lines 38 / 39
+    _if hardwareVersion < 4:_
+      _raise ValueError("Minimum hardware version required is 4.")_
+and report, if everything is working correctly. Some posts on the internet said, that the go-eCharger API or the API Key are different in the hardware versions v1/v2/v3/v4
+
+
 ## Purpose
 With the scripts in this repo it should be easy possible to install, uninstall, restart a service that connects the go-eCharger to the VenusOS and GX devices from Victron.
 Idea is inspired on @fabian-lauer and @trixing project linked below, many thanks for sharing the knowledge:
