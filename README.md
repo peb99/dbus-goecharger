@@ -65,6 +65,13 @@ If you have (only) DC connected PV System you have to edit the lines 201 - 205. 
 ![VRM / details](/pics/vrm-details.png)
 
 ## Install & Configuration
+
+## Configure your go-eCharger
+- Wifi Connection has to be established
+- HTTP v2 API has to be enabled
+- set Max Ampere: Settings / Security / Grid / _set your correct settings referring to your country, energy-provider and installation_
+- set PV SurPlus: Settings / charging config / PV-surplus / _active first parameter and set the parameters you like or leave default_
+
 ### Get the code
 Just grap a copy of the main branche and copy them to a folder under `/data/` e.g. `/data/dbus-goecharger`.
 Set permissions to execute for "install.sh", "restart.sh" and "uninstall.sh"
