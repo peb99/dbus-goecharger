@@ -17,9 +17,9 @@ If you want to support my work, you can support via paypal: https://www.paypal.c
 
 
 # dbus-goecharger
-Integrate go-eCharger (v4) into Victron Energiy Venus OS with automatic mode and PvSurPlus
+Integrate go-eCharger (v4) into Victron Energiy Venus OS with automatic mode and PvSurPlus without the need of Go-e Controller.
 
-Integrierte den go-eCharger (v4) in das Victron Energy Venus OS mit automatischem Lademodus mit Überschussladung.
+Integrierte den go-eCharger (v4) in das Victron Energy Venus OS mit automatischem Lademodus mit Überschussladung ohne den Go-e Controller.
 
 
 
